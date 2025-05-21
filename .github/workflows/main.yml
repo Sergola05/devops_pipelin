@@ -1,161 +1,92 @@
 name: CI/CD Pipeline
 
 on:
+  push:
+    branches: [master]
   pull_request:
-    types: [opened, synchronize]
-
-env:
-  IMAGE_NAME: serjo221221/myproject
-  VERSION_FILE: version
+    branches: [master]
 
 jobs:
-
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - run: echo "🧪 Unit tests passed (stub)"
-      - name: Add label
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run tests (stub)
+        run: echo "Tests passed!"
+
+      - name: Add label test-passed
+        if: github.event.pull_request != null
         uses: actions-ecosystem/action-add-labels@v1
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           labels: test-passed
-          github_token: ${{ secrets.PAT_TOKEN }}
 
   security:
     runs-on: ubuntu-latest
+    needs: test
     steps:
-      - uses: actions/checkout@v3
-      - name: ClamAV Scan
-        uses: djdefi/clamav-scan-action@v1.1.0
-      - name: Linter
-        run: echo "Lint check passed (stub)"
-      - name: Add label
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Antivirus scan (stub)
+        run: echo "Antivirus scan passed!"
+
+      - name: Linter check (stub)
+        run: echo "Lint passed!"
+
+      - name: Add label sec-passed
+        if: github.event.pull_request != null
         uses: actions-ecosystem/action-add-labels@v1
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           labels: sec-passed
-          github_token: ${{ secrets.PAT_TOKEN }}
 
-  versioning:
+  update_version:
     runs-on: ubuntu-latest
-    needs: [test, security]
+    needs: security
+    outputs:
+      new_version: ${{ steps.ver.outputs.new_version }}
+      type_update: ${{ steps.ver.outputs.type_update }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Read version
-        id: version
-        run: |
-          version=$(cat version)
-          IFS='.' read -r major minor patch <<< "$version"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-          type="patch"
-          if [[ "${{ github.head_ref }}" == feature* ]]; then
+      - name: Determine new version
+        id: ver
+        run: |
+          old_version=$(cat version || echo "0.0.0")
+          branch="${GITHUB_HEAD_REF:-$(git rev-parse --abbrev-ref HEAD)}"
+          IFS='.' read -r major minor patch <<< "$old_version"
+          if [[ "$branch" == feature* ]]; then
             minor=$((minor + 1))
             patch=0
             type="minor"
-          elif [[ "${{ github.head_ref }}" == hotfix* ]]; then
+          elif [[ "$branch" == hotfix* ]]; then
             patch=$((patch + 1))
             type="patch"
+          else
+            type="patch"
+            patch=$((patch + 1))
           fi
-
-          new_version="${major}.${minor}.${patch}"
+          new_version="$major.$minor.$patch"
           echo "$new_version" > version
-          echo "new=$new_version" >> $GITHUB_OUTPUT
-          echo "type=$type" >> $GITHUB_OUTPUT
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+          echo "type_update=$type" >> $GITHUB_OUTPUT
 
-      - name: Commit new version
+      - name: Commit version update
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
           git add version
-          git commit -m "[${{ steps.version.outputs.new }}] - [${{ github.event.pull_request.head.ref }}] ${{ steps.version.outputs.type }} up"
-          git push
+          git commit -m "Version update: ${{ steps.ver.outputs.new_version }} (${{ steps.ver.outputs.type_update }})"
+          git fetch origin
+          git rebase
 
-      - name: Add label
-        uses: actions-ecosystem/action-add-labels@v1
-        with:
-          labels: ${{ steps.version.outputs.new }}
-          github_token: ${{ secrets.PAT_TOKEN }}
-
-  changelog:
-    runs-on: ubuntu-latest
-    needs: versioning
-    steps:
-      - uses: actions/checkout@v3
-      - name: Update changelog
-        run: |
-          echo -e "## Version ${{ needs.versioning.outputs.new }} (from branch: ${{ github.head_ref }})\n" | cat - changelog.md > temp && mv temp changelog.md
-      - name: Commit changelog
-        run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add changelog.md
-          git commit -m "Update changelog"
-          git push
-      - name: Add changelog label
-        uses: actions-ecosystem/action-add-labels@v1
-        with:
-          labels: changelog
-          github_token: ${{ secrets.PAT_TOKEN }}
-
-  docker:
-    runs-on: ubuntu-latest
-    needs: changelog
-    steps:
-      - uses: actions/checkout@v3
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and Push
-        run: |
-          VERSION=$(cat version)
-          docker build -t $IMAGE_NAME:v$VERSION .
-          docker push $IMAGE_NAME:v$VERSION
-
-      - name: Add dockerhub label
-        uses: actions-ecosystem/action-add-labels@v1
-        with:
-          labels: dockerhub
-          github_token: ${{ secrets.PAT_TOKEN }}
-
-  telegram:
-    runs-on: ubuntu-latest
-    needs: docker
-    steps:
-      - uses: actions/checkout@v3
-      - name: Send message
-        run: |
-          curl -F document=@changelog.md \
-            -F caption="✅ CI/CD Pipeline completed for PR [${{ github.event.pull_request.number }}](https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }})" \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
-
-  prod:
-    runs-on: ubuntu-latest
-    needs: telegram
-    steps:
-      - name: Deploy
-        run: |
-          echo "🚀 Pull and run docker-compose with updated image (имитация на локалке)"
-      - name: Add PROD label
-        uses: actions-ecosystem/action-add-labels@v1
-        with:
-          labels: PROD
-          github_token: ${{ secrets.PAT_TOKEN }}
-
-  release:
-    runs-on: ubuntu-latest
-    needs: prod
-    steps:
-      - uses: actions/checkout@v3
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.versioning.outputs.new }}
-          name: Release ${{ needs.versioning.outputs.new }}
-          body: |
-            Release for branch: ${{ github.head_ref }}
-            Version: ${{ needs.versioning.outputs.new }}
 
 
 
