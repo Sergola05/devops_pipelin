@@ -187,14 +187,24 @@ jobs:
 
       - name: Send Telegram notification
         run: |
-          TEXT="✅ *Новая версия опубликована*\n\n📦 Версия: \`${{ needs.update_version.outputs.new_version }}\`\n🔗 [Репозиторий](${{ github.server_url }}/${{ github.repository }})"
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.CHAT_ID }} \
-            -d parse_mode=Markdown \
-            -d text="$TEXT"
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument \
-            -F chat_id=${{ secrets.CHAT_ID }} \
-            -F document=@./changelog/changelog.md
+          # Формирование сообщения
+          TEXT="🚀 *Сборка #${{ github.run_number }} успешна!*
+          \n\n🏷 *Версия:* \`${{ needs.update_version.outputs.new_version }}\`
+          \n📅 *Дата:* $(date +'%Y-%m-%d %H:%M %Z')
+          \n🔗 *Подробности:* [${{ github.repository }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          \n🐳 *Docker образ:* [serjo221221/devops_project:v${{ needs.update_version.outputs.new_version }}](https://hub.docker.com/r/serjo221221/devops_project/tags)"
+          
+          # Отправка сообщения
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.CHAT_ID }}" \
+            -d "parse_mode=Markdown" \
+            -d "text=$TEXT"
+          
+          # Отправка changelog
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument" \
+            -F "chat_id=${{ secrets.CHAT_ID }}" \
+            -F "document=@./changelog/changelog.md" \
+            -F "caption=📋 Полный список изменений для v${{ needs.update_version.outputs.new_version }}"
 
   deploy_prod:
     runs-on: ubuntu-latest
