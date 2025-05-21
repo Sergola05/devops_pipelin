@@ -52,7 +52,7 @@ jobs:
       - name: Determine new version
         id: version
         run: |
-          # Пример: на основе ветки или коммита определяем тип обновления
+          # ТУТ твоя логика для подсчёта версии, пример:
           echo "new_version=0.1.0" >> $GITHUB_OUTPUT
           echo "type_update=minor" >> $GITHUB_OUTPUT
 
@@ -63,7 +63,7 @@ jobs:
           git config user.email "github-actions@github.com"
           git add version
           git commit -m "[${{ steps.version.outputs.new_version }}] - [old_version] ${{ steps.version.outputs.type_update }} up"
-          git push
+          git push https://${{ secrets.PAT_TOKEN }}@github.com/Sergola05/devops_pipelin.git HEAD:master
 
       - name: Add version label
         if: github.event.pull_request != null
@@ -85,7 +85,7 @@ jobs:
           git config user.email "github-actions@github.com"
           git add changelog.md
           git commit -m "Update changelog for version ${{ needs.update_version.steps.version.outputs.new_version }}"
-          git push
+          git push https://${{ secrets.PAT_TOKEN }}@github.com/Sergola05/devops_pipelin.git HEAD:master
 
       - name: Add changelog label
         if: github.event.pull_request != null
@@ -171,3 +171,4 @@ jobs:
           body: "Release description for version ${{ needs.update_version.steps.version.outputs.new_version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
