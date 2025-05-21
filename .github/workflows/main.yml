@@ -77,6 +77,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git pull --rebase origin master
           git add version
           git commit -m "[${{ steps.ver.outputs.new_version }}] - [old_version] ${{ steps.ver.outputs.type_update }} up" || echo "Nothing to commit"
           git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git HEAD:master
@@ -99,6 +100,7 @@ jobs:
           echo "Version ${{ needs.update_version.outputs.new_version }} — merged branch: ${{ github.head_ref || github.ref_name }}" | cat - changelog.md > temp && mv temp changelog.md
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git pull --rebase origin master
           git add changelog.md
           git commit -m "Update changelog for version ${{ needs.update_version.outputs.new_version }}" || echo "No changes"
           git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git HEAD:master
@@ -190,5 +192,6 @@ jobs:
           body: "Auto-release of version ${{ needs.update_version.outputs.new_version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
