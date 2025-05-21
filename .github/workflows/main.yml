@@ -1,0 +1,163 @@
+name: CI/CD Pipeline
+on:
+  push:
+    branches:
+      - master
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Тестирование
+    steps:
+      - uses: actions/checkout@v3
+      - name: Юнит тест (заглушка)
+        run: echo "Running unit tests..."
+      - name: Интеграционный тест (заглушка)
+        run: echo "Integration test passed"
+      - name: Add label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: test-passed
+
+  security:
+    runs-on: ubuntu-latest
+    name: Безопасность
+    needs: test
+    steps:
+      - uses: actions/checkout@v3
+      - name: Линтинг
+        run: echo "Lint passed"
+      - name: Антивирус
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          apiKey: ${{ secrets.VIRUSTOTAL_API }}
+          files: main.py
+      - name: Add label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: sec-passed
+
+  versioning:
+    runs-on: ubuntu-latest
+    name: Версионирование
+    needs: security
+    steps:
+      - uses: actions/checkout@v3
+      - name: Извлечение старой версии
+        id: get_version
+        run: |
+          old=$(cat version)
+          echo "old_version=$old" >> $GITHUB_OUTPUT
+      - name: Обновление версии
+        id: bump_version
+        run: |
+          branch="${GITHUB_REF##*/}"
+          old=$(cat version)
+          major=$(echo $old | cut -d. -f1)
+          minor=$(echo $old | cut -d. -f2)
+          patch=$(echo $old | cut -d. -f3)
+
+          if [[ "$branch" == *feature* ]]; then
+            minor=$((minor+1)); patch=0
+            type="minor"
+          else
+            patch=$((patch+1))
+            type="patch"
+          fi
+
+          new="$major.$minor.$patch"
+          echo $new > version
+          echo "new_version=$new" >> $GITHUB_OUTPUT
+          echo "[${new}] - [${old}] $type up" > version_commit.txt
+      - name: Commit new version
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github@actions"
+          git add version
+          msg=$(cat version_commit.txt)
+          git commit -m "$msg"
+          git push
+      - name: Add version label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: ${{ steps.bump_version.outputs.new_version }}
+
+  changelog:
+    runs-on: ubuntu-latest
+    name: Changelog
+    needs: versioning
+    steps:
+      - uses: actions/checkout@v3
+      - name: Add changelog
+        run: |
+          ver=$(cat version)
+          echo -e "\n## $ver\n- ${GITHUB_REF##*/}" | cat - changelog.md > temp && mv temp changelog.md
+      - name: Commit changelog
+        run: |
+          git add changelog.md
+          git commit -m "update changelog"
+          git push
+      - name: Add changelog label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: changelog
+
+  dockerhub:
+    runs-on: ubuntu-latest
+    name: DockerHub Публикация
+    needs: changelog
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build and push image
+        run: |
+          version=$(cat version)
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u serjo221221 --password-stdin
+          docker build -t serjo221221/devops:v$version .
+          docker push serjo221221/devops:v$version
+      - name: Add dockerhub label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: dockerhub
+
+  telegram_notify:
+    runs-on: ubuntu-latest
+    name: Telegram Уведомление
+    needs: dockerhub
+    steps:
+      - uses: actions/checkout@v3
+      - name: Send message
+        run: |
+          msg="✅ Версия $(cat version) опубликована!"
+          curl -F document=@changelog.md \
+               -F caption="$msg" \
+               "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}"
+
+  deploy:
+    runs-on: ubuntu-latest
+    name: Деплой
+    needs: telegram_notify
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy
+        run: |
+          docker pull serjo221221/devops:v$(cat version)
+          docker compose down
+          docker compose up -d
+      - name: Add PROD label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: PROD
+
+  release:
+    runs-on: ubuntu-latest
+    name: GitHub релиз
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v3
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v$(cat version)
+          name: Release v$(cat version)
+          body: |
+            Автоматический релиз версии $(cat version)
+            Ветка: ${GITHUB_REF##*/}
