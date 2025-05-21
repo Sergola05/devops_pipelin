@@ -52,11 +52,11 @@ jobs:
       - name: Determine new version
         id: version
         run: |
-          # ТУТ твоя логика для подсчёта версии, пример:
+          # Пример: установить новую версию вручную
           echo "new_version=0.1.0" >> $GITHUB_OUTPUT
           echo "type_update=minor" >> $GITHUB_OUTPUT
 
-      - name: Update version file
+      - name: Update version file and push
         run: |
           echo "${{ steps.version.outputs.new_version }}" > version
           git config user.name "github-actions"
@@ -95,7 +95,7 @@ jobs:
           labels: changelog
 
       - name: Upload changelog artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: changelog
           path: changelog.md
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Download changelog artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changelog
           path: ./changelog
