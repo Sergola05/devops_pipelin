@@ -7,11 +7,12 @@ on:
     branches: [master]
 
 jobs:
-
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Получаем полную историю коммитов
 
       - name: Run tests (stub)
         run: echo "Tests passed!"
@@ -28,6 +29,8 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Antivirus scan (stub)
         run: echo "Antivirus scan passed!"
@@ -50,6 +53,8 @@ jobs:
       type_update: ${{ steps.ver.outputs.type_update }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Determine new version
         id: ver
@@ -75,11 +80,19 @@ jobs:
 
       - name: Commit version update
         run: |
+          # Настройка git
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git pull --rebase origin master
+          
+          # Создание коммита
           git add version
-          git commit -m "[${{ steps.ver.outputs.new_version }}] - [old_version] ${{ steps.ver.outputs.type_update }} up" || echo "Nothing to commit"
+          git commit -m "Version update: ${{ steps.ver.outputs.new_version }} (${{ steps.ver.outputs.type_update }})"
+          
+          # Синхронизация с origin/master
+          git fetch origin
+          git rebase origin/master
+          
+          # Отправка изменений
           git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git HEAD:master
 
       - name: Add version label
@@ -94,15 +107,32 @@ jobs:
     needs: update_version
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Update changelog
         run: |
-          echo "Version ${{ needs.update_version.outputs.new_version }} — merged branch: ${{ github.head_ref || github.ref_name }}" | cat - changelog.md > temp && mv temp changelog.md
+          # Обновление changelog
+          echo "Version ${{ needs.update_version.outputs.new_version }} ($(date +'%Y-%m-%d'))" > new_changelog.md
+          echo "-----------------------------" >> new_changelog.md
+          echo "- Auto-generated update" >> new_changelog.md
+          echo "" >> new_changelog.md
+          cat changelog.md >> new_changelog.md
+          mv new_changelog.md changelog.md
+          
+          # Настройка git
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git pull --rebase origin master
+          
+          # Создание коммита
           git add changelog.md
-          git commit -m "Update changelog for version ${{ needs.update_version.outputs.new_version }}" || echo "No changes"
+          git commit -m "Update changelog for version ${{ needs.update_version.outputs.new_version }}"
+          
+          # Синхронизация с origin/master
+          git fetch origin
+          git rebase origin/master
+          
+          # Отправка изменений
           git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git HEAD:master
 
       - name: Add changelog label
@@ -110,7 +140,7 @@ jobs:
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          labels: changelog
+          labels: changelog-updated
 
       - name: Upload changelog artifact
         uses: actions/upload-artifact@v4
@@ -141,7 +171,7 @@ jobs:
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          labels: dockerhub
+          labels: docker-published
 
   telegram_notify:
     runs-on: ubuntu-latest
@@ -170,15 +200,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: telegram_notify
     steps:
-      - name: Deploy to PROD (stub)
-        run: echo "Deploying from DockerHub..."
+      - name: Deploy to PROD
+        run: |
+          echo "Deploying version ${{ needs.update_version.outputs.new_version }} to production"
+          # Здесь должна быть реальная логика деплоя
 
       - name: Add PROD label
         if: github.event.pull_request != null
         uses: actions-ecosystem/action-add-labels@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          labels: PROD
+          labels: deployed-to-prod
 
   create_release:
     runs-on: ubuntu-latest
@@ -189,7 +221,9 @@ jobs:
         with:
           tag_name: v${{ needs.update_version.outputs.new_version }}
           name: Release v${{ needs.update_version.outputs.new_version }}
-          body: "Auto-release of version ${{ needs.update_version.outputs.new_version }}"
+          body: "Auto-generated release for version ${{ needs.update_version.outputs.new_version }}"
+          files: |
+            changelog.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
