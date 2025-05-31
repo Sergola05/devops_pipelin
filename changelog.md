@@ -1,3 +1,7 @@
+Version 0.2.3 (2025-05-31)
+-----------------------------
+- Auto-generated update
+
 Version 0.2.2 (2025-05-21)
 -----------------------------
 - Auto-generated update
